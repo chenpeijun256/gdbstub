@@ -80,7 +80,7 @@ impl Emu {
 
     fn s_rsp(&mut self) -> String {
         self.pc += 4;
-        "S00".to_string()
+        "S05".to_string()
     }
 
     fn g_rsp(&self) -> String {
@@ -124,7 +124,7 @@ fn handle_rsp(emu: &mut Emu, in_str: String) -> Option<String> {
             } else if ss_str[1].eq("?") {
                 out_str = pack_rsp("S05");
             } else if ss_str[1].eq("qAttached") {
-                out_str = pack_rsp("1");
+                out_str = pack_rsp("0");
             } else if ss_str[1].eq("g") {
                 out_str = pack_rsp(&emu.g_rsp());
             } else if ss_str[1].starts_with("p") {
@@ -167,6 +167,7 @@ fn handle_client(mut stream: TcpStream) -> Result<(), Error> {
             println!("read 0, return.");
             return Ok(()); 
         }
+        println!("in: {:?}", buf[..bytes_read].to_vec());
         match String::from_utf8(buf[0..bytes_read].to_vec()) {
             Ok(in_str) => {
                 println!("in: {in_str}");
