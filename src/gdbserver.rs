@@ -1,6 +1,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
-use std::str::FromStr;
+
 use std::thread;
 
 use crate::{bin_file, utils};
@@ -9,7 +9,6 @@ use crate::rv32_actor::Rv32Actor;
 
 pub struct GdbServer {
     no_ack_mode: bool,
-    breakpoint: Vec<u32>,
 }
 
 impl GdbServer {
@@ -97,8 +96,27 @@ impl GdbServer {
                         let start = utils::hex_to_u32(start_size[1]); 
                         let size = utils::hex_to_u32(start_size[2]);
                         println!("Z0 start:{start}, size{size}");
-                        self.breakpoint.push(start);//73001000
+                        if soc.gdb_bp() == 0 {
+                            soc.gdb_set_bp(start);
+                            out_str = self.pack_rsp("OK");
+                        } else {
+                            out_str = self.pack_rsp("");
+                        }
+                    } else {
                         out_str = self.pack_rsp("");
+                    }
+                } else if ss_str[1].starts_with("z0") {
+                    let start_size: Vec<&str> = ss_str[1].split(',').collect();
+                    if start_size.len() == 3 {
+                        let start = utils::hex_to_u32(start_size[1]); 
+                        let size = utils::hex_to_u32(start_size[2]);
+                        println!("z0 start:{start}, size{size}");
+                        if soc.gdb_bp() == start {
+                            soc.gdb_set_bp(0);
+                            out_str = self.pack_rsp("OK");
+                        } else {
+                            out_str = self.pack_rsp("");
+                        }
                     } else {
                         out_str = self.pack_rsp("");
                     }
@@ -108,6 +126,8 @@ impl GdbServer {
                 } else if ss_str[1].eq("c") {
                     soc.gdb_c();
                     out_str = self.pack_rsp("S05");
+                } else if ss_str[1].eq("k") {
+                    out_str = self.pack_rsp("OK");
                 } else {
                     out_str = self.pack_rsp("");
                 }
@@ -120,7 +140,7 @@ impl GdbServer {
     }
 
     pub fn new() -> Self {
-        GdbServer { no_ack_mode: false, breakpoint: Vec::new()}
+        GdbServer { no_ack_mode: false}
     }
 }
 
@@ -158,13 +178,14 @@ pub fn server_start(filename: &String) {
                                             .expect("Tcp listener bind failed.");
     for stream in listener.incoming() {
         match stream {
-            Err(e) => { println!("failed: {}", e) }
+            Err(e) => { println!("failed: {e}") },
             Ok(stream) => {
                 let fname = filename.clone();
                 thread::spawn(move || {
-                    handle_client(fname, stream).unwrap_or_else(|e| println!("{:?}", e));
+                    handle_client(fname, stream).
+                        unwrap_or_else(|e| println!("{e}"));
                 });
-            }
+            },
         }
     }
 }

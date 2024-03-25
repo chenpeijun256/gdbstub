@@ -21,6 +21,9 @@ pub struct Rv32Actor {
 
     mems: Vec<Mem>,
     perips: Vec<Perips>,
+
+    gdb_i: usize, //gdb cpu index
+    gdb_breakpoint: u32, //one hw breakpoint supported only
 }
 
 impl Rv32Actor {
@@ -31,6 +34,8 @@ impl Rv32Actor {
                     cpus: Vec::new(),
                     mems: Vec::new(),
                     perips: Vec::new(),
+                    gdb_i: 0,
+                    gdb_breakpoint: 0,
                 }
     }
 
@@ -52,13 +57,13 @@ impl Rv32Actor {
         }
     }
 
-    pub fn get_rs(&self, index: u32) -> u32 {
-        self.cpus[0].get_rs(index)
-    }
+    // pub fn get_rs(&self, index: u32) -> u32 {
+    //     self.cpus[0].get_rs(index)
+    // }
 
-    pub fn get_tick(&self) -> u32 {
-        self.tick_cnt
-    }
+    // pub fn get_tick(&self) -> u32 {
+    //     self.tick_cnt
+    // }
 
     fn handle_exception(&mut self) {
         let mut intrrupt_en = false;
@@ -695,98 +700,107 @@ impl Rv32Actor {
         }
     }
 
-    pub fn print_d(&self, name: &String, arg: &String) {
-        for cpu in self.cpus.iter() {
-            if cpu.match_name(&name) {
-                if arg == "reg" {
-                    cpu.print_reg();
-                } else if arg == "csr" {
-                    cpu.print_csr();
-                }
-                return;
-            }
-        }
+    // pub fn print_d(&self, name: &String, arg: &String) {
+    //     for cpu in self.cpus.iter() {
+    //         if cpu.match_name(&name) {
+    //             if arg == "reg" {
+    //                 cpu.print_reg();
+    //             } else if arg == "csr" {
+    //                 cpu.print_csr();
+    //             }
+    //             return;
+    //         }
+    //     }
 
-        for mem in self.mems.iter() {
-            if mem.match_name(&name) {
-                let addr = crate::utils::parse_hex_u32_err_to_0(&arg);
-                if mem.in_range(addr) {
-                    println!("{}", mem.dump(addr));
-                }
-                return;
-            }
-        }
+    //     for mem in self.mems.iter() {
+    //         if mem.match_name(&name) {
+    //             let addr = crate::utils::parse_hex_u32_err_to_0(&arg);
+    //             if mem.in_range(addr) {
+    //                 println!("{}", mem.dump(addr));
+    //             }
+    //             return;
+    //         }
+    //     }
 
-        for p in self.perips.iter() {
-            if p.match_name(&name) {
-                println!("{}", p.dump(0));
-                return;
-            }
-        }
-    }
+    //     for p in self.perips.iter() {
+    //         if p.match_name(&name) {
+    //             println!("{}", p.dump(0));
+    //             return;
+    //         }
+    //     }
+    // }
 
-    pub fn set_v_d(&mut self, name: &String, arg1: &String, arg2: &String) {
-        let addr = crate::utils::parse_hex_u32_err_to_0(&arg1);
-        let val = crate::utils::parse_hex_u32_err_to_0(&arg2);
-        for cpu in self.cpus.iter_mut() {
-            if cpu.match_name(&name) {
-                if addr < 32 {
-                    cpu.set_rs(addr, val);
-                } else {
-                    cpu.write_csr(addr, val);
-                }
-                return;
-            }
-        }
+    // pub fn set_v_d(&mut self, name: &String, arg1: &String, arg2: &String) {
+    //     let addr = crate::utils::parse_hex_u32_err_to_0(&arg1);
+    //     let val = crate::utils::parse_hex_u32_err_to_0(&arg2);
+    //     for cpu in self.cpus.iter_mut() {
+    //         if cpu.match_name(&name) {
+    //             if addr < 32 {
+    //                 cpu.set_rs(addr, val);
+    //             } else {
+    //                 cpu.write_csr(addr, val);
+    //             }
+    //             return;
+    //         }
+    //     }
 
-        for mem in self.mems.iter_mut() {
-            if mem.match_name(&name) {
-                if mem.in_range(addr) {
-                    mem.write_u32(val, addr);
-                }
-                return;
-            }
-        }
+    //     for mem in self.mems.iter_mut() {
+    //         if mem.match_name(&name) {
+    //             if mem.in_range(addr) {
+    //                 mem.write_u32(val, addr);
+    //             }
+    //             return;
+    //         }
+    //     }
 
-        for p in self.perips.iter_mut() {
-            if p.match_name(&name) {
-                p.write_u32(val, addr);
-                return;
-            }
-        }
-    }
+    //     for p in self.perips.iter_mut() {
+    //         if p.match_name(&name) {
+    //             p.write_u32(val, addr);
+    //             return;
+    //         }
+    //     }
+    // }
 
     //gdb server interface
+    pub fn gdb_bp(&self) -> u32 {
+        self.gdb_breakpoint
+    }
+
+    pub fn gdb_set_bp(&mut self, breakpoint: u32) {
+        self.gdb_breakpoint = breakpoint;
+    }
+
     pub fn gdb_s(&mut self) {
         self.tick();
     }
 
     pub fn gdb_c(&mut self) {
         loop {
+            if self.cpus[self.gdb_i].get_pc() == self.gdb_breakpoint {
+                break;
+            }
+
             self.tick();
 
-            //todo:
-            if self.cpus[0].ebreak() {
+            if self.cpus[self.gdb_i].ebreak() {
                 break;
             }
         }
     }
 
     pub fn gdb_g(&self) -> String {
-        // let cpu = self.cpus[0];//TODO:
         let mut res = String::new();
         for i in 0..32 {
-            let r = self.cpus[0].get_rs(i);
+            let r = self.cpus[self.gdb_i].get_rs(i);
             res.push_str(&utils::u32_to_hex(r));
         }
-        res.push_str(&utils::u32_to_hex(self.cpus[0].get_pc()));
+        res.push_str(&utils::u32_to_hex(self.cpus[self.gdb_i].get_pc()));
 
         res
     }
 
     pub fn gdb_p(&self, ind: u32) -> String {
-        // let cpu = self.cpus[0];//TODO:
-        utils::u32_to_hex(self.cpus[0].get_rs(ind))
+        utils::u32_to_hex(self.cpus[self.gdb_i].get_rs(ind))
     }
 
     pub fn gdb_m(&self, start: u32, size: u32) -> String {
